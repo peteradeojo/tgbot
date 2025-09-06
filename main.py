@@ -31,9 +31,10 @@ Use the following commands to get around:
 
 database: Database
 
-def check_user(user: User, context: ContextTypes.DEFAULT_TYPE):
+def check_user(user: User | None, context: ContextTypes.DEFAULT_TYPE):
+    if user is None:
+        return None
     dbuser = database.readone("SELECT id, username FROM users WHERE username = ?", [user.username])
-    
     return dbuser
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
