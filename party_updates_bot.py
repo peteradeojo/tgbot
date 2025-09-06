@@ -1,7 +1,7 @@
 import os, logging
 from sys import argv
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, User
 from telegram.ext import filters, ApplicationBuilder, ContextTypes, CommandHandler, ConversationHandler, MessageHandler
 from datetime import datetime
 
@@ -14,7 +14,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-NAME = range(1)
+NAME, TYPE, DATE, TIME = range(4)
 
 HELP_MESSAGE = '''
 Welcome to Party updates.
@@ -31,11 +31,16 @@ Use the following commands to get around:
 
 database: Database
 
+def check_user(user: User, context: ContextTypes.DEFAULT_TYPE):
+    dbuser = database.readone("SELECT id, username FROM users WHERE username = ?", [user.username])
+    
+    return dbuser
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user is None:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Welcome to Party updates!")
-        return 
+        return
     
     database_user = database.readone(f"SELECT * FROM users WHERE username='{user.username}'")
     if database_user is None:
@@ -46,10 +51,48 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text=HELP_MESSAGE)
     
 async def newevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="What is the name of your event?")
+    dbuser = check_user(update.effective_user, context)
+    if dbuser is None:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="You are not registered")
+        return
+    
+    # reply_keyboard = []
+    await update.message.reply_text(
+        "What is the name of the event you are trying to publicize?",
+        # reply_markup=ReplyKeyboardMarkup(
+        #     reply_keyboard, one_time_keyboard=True
+        # ),
+    )
+    
+    return NAME
 
 async def eventname(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pass
+    name = update.message.text
+    logger.info("Event name: %s", name)
+    
+    context.chat_data['event_name'] = name
+    
+    # await update.message.reply_text("Cool! Saved. Now what is the type of event? (e.g., party, meeting, etc.)")
+    reply_keyboard = [["Party", "Meeting", "Concert"], ["Workshop", "Other"]]
+    await update.message.reply_text(
+        "Cool! Saved. Now what is the type of event?",
+        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    )
+    
+    return TYPE
+    
+async def eventtype(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    type = update.message.text
+    logger.info("Event type: %s", type)
+    
+    if 'event_name' not in context.chat_data:
+        await update.message.reply_text("Please provide an event name first.")
+        return NAME
+    
+    event_name = context.chat_data['event_name']
+    
+    await update.message.reply_text(f"Event '{event_name}' of type '{type}' has been saved!") 
+    return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
@@ -72,10 +115,12 @@ def main():
     start_handler=CommandHandler('start', start)
     
     app.add_handler(start_handler)
+    app.add_handler(CommandHandler('help', help))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler('newevent', newevent)],
         states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, eventname)]
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, eventname)],
+            TYPE: [MessageHandler(filters.Regex("^()$"), eventtype)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     ))
@@ -86,9 +131,12 @@ if __name__ == "__main__":
     load_dotenv(".env")
     database = Database()
     
-    if argv[1] == "migrations:show":
-        database.get_migrations()
-    if argv[1] == "migrations:run":
-        database.run_migrations()
-    if argv[1] == "migrations:revert":
-        database.revert_migrations(int(argv[2] if len(argv) == 3 else 1))
+    if len(argv) > 2:
+        if argv[1] == "migrations:show":
+            database.get_migrations()
+        elif argv[1] == "migrations:run":
+            database.run_migrations()
+        elif argv[1] == "migrations:revert":
+            database.revert_migrations(int(argv[2] if len(argv) == 3 else 1))
+    else:
+        main()

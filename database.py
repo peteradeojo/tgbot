@@ -21,9 +21,8 @@ class Database:
         self.__connection.commit()
         return
 
-    def readone(self, query: str):
-        self.__cursor.execute(query)
-        return self.__cursor.fetchone()
+    def readone(self, query: str, params: list = []):
+        return self.__cursor.execute(query, params).fetchone()
         
     def readmany(self, query: str):
         self.__cursor.execute(query)
